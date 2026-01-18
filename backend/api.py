@@ -18,6 +18,7 @@ logger = logging.getLogger("api")
 class ChatRequest(BaseModel):
     message: str
     preview: Optional[bool] = False
+    local_time: Optional[str] = None
 
 class ChatResponse(BaseModel):
     type: str # 'reminder_created', 'text', 'error', 'preview'
@@ -56,10 +57,30 @@ async def chat(req: ChatRequest):
         db.mark_all_notifications_read()
         return ChatResponse(type="text", message="👍 Notifications silenced.")
 
-    result = parser.parse(req.message)
+    result = parser.parse(req.message, req.local_time)
     if 'error' in result:
         return ChatResponse(type="error", message=result['error'])
     
+    # Calculate target time for server (Render is UTC)
+    # If we have local_time, result['run_time'] is relative to that.
+    target_time = result['run_time']
+    if req.local_time:
+        try:
+            # Parse user_now as ISO
+            user_now = datetime.fromisoformat(req.local_time.replace('Z', '+00:00'))
+            # server_now = datetime.now(user_now.tzinfo) # This line is not used
+            delta = target_time - user_now.replace(tzinfo=target_time.tzinfo) # Both naive or both aware
+            # If naive, make both naive for calculation
+            if target_time.tzinfo is None:
+                user_now_naive = user_now.replace(tzinfo=None)
+                delta = target_time - user_now_naive
+            
+            # Application time on server
+            target_time = datetime.now() + delta
+        except Exception as e:
+            logger.error(f"Time conversion error: {e}")
+            # Fallback to naive target_time
+            # If an error occurs, target_time remains result['run_time']
     # If in preview mode, don't save to DB yet
     if req.preview:
         pretty_time = result['run_time'].strftime("%I:%M %p")
@@ -74,8 +95,8 @@ async def chat(req: ChatRequest):
         )
     
     try:
-        r_id = db.add_reminder(result['task'], result['run_time'], result['repeat_type'])
-        scheduler.schedule_reminder(r_id, result['task'], result['run_time'], result['repeat_type'])
+        r_id = db.add_reminder(result['task'], target_time, result['repeat_type'])
+        scheduler.schedule_reminder(r_id, result['task'], target_time, result['repeat_type'])
         
         return ChatResponse(
             type="reminder_created",

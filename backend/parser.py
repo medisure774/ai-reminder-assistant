@@ -11,12 +11,19 @@ class ReminderParser:
             'RETURN_AS_TIMEZONE_AWARE': False
         }
 
-    def parse(self, text: str):
+    def parse(self, text: str, local_time_str: str = None):
         text = text.strip()
         
         # Use current time as relative base for every parse
         current_settings = self.settings.copy()
-        current_settings['RELATIVE_BASE'] = datetime.now()
+        if local_time_str:
+            try:
+                # ISO format parse
+                current_settings['RELATIVE_BASE'] = datetime.fromisoformat(local_time_str.replace('Z', '+00:00')).replace(tzinfo=None)
+            except:
+                current_settings['RELATIVE_BASE'] = datetime.now()
+        else:
+            current_settings['RELATIVE_BASE'] = datetime.now()
         
         # 1. Detect recurrence
         repeat_type = 'once'
