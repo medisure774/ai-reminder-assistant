@@ -1,7 +1,10 @@
 import dateparser
 import dateparser.search
 import re
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 class ReminderParser:
     def __init__(self):
