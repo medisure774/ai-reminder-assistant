@@ -15,7 +15,7 @@ export const assistantApi = {
     chat: (message, preview = false) => api.post('/chat', {
         message,
         preview,
-        local_time: new Date().toISOString()
+        local_time: new Date().toLocaleString('sv').replace(' ', 'T')
     }),
     getReminders: () => api.get('/reminders'),
     deleteReminder: (id) => api.delete(`/reminders/${id}`),

@@ -66,17 +66,18 @@ async def chat(req: ChatRequest):
     target_time = result['run_time']
     if req.local_time:
         try:
-            # Parse user_now as ISO
-            user_now = datetime.fromisoformat(req.local_time.replace('Z', '+00:00'))
-            # server_now = datetime.now(user_now.tzinfo) # This line is not used
-            delta = target_time - user_now.replace(tzinfo=target_time.tzinfo) # Both naive or both aware
-            # If naive, make both naive for calculation
-            if target_time.tzinfo is None:
-                user_now_naive = user_now.replace(tzinfo=None)
-                delta = target_time - user_now_naive
+            # Parse user_now as ISO (it's formatted as sv/ISO on frontend now)
+            user_now = datetime.fromisoformat(req.local_time)
+            
+            # Both must be naive for delta
+            user_now_naive = user_now.replace(tzinfo=None)
+            target_time_naive = target_time.replace(tzinfo=None)
+            
+            delta = target_time_naive - user_now_naive
             
             # Application time on server
             target_time = datetime.now() + delta
+            logger.info(f"Time Sync: UserNow={user_now_naive}, Target={target_time_naive}, Delta={delta}, ServerSchedule={target_time}")
         except Exception as e:
             logger.error(f"Time conversion error: {e}")
             # Fallback to naive target_time
