@@ -1,0 +1,96 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+import logging
+import contextlib
+import os
+from datetime import datetime
+
+# Relative imports from the database package
+from database import db
+from parser import parser
+from scheduler import scheduler
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("api")
+
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    type: str # 'reminder_created', 'text', 'error'
+    message: str
+    data: Optional[dict] = None
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start scheduler and load jobs
+    scheduler.start()
+    scheduler.load_jobs_from_db()
+    yield
+    # Shutdown logic if needed
+
+app = FastAPI(title="AI BUDDY API", lifespan=lifespan)
+
+# CORS: Production Ready
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # For MVP, allow all; change to your Vercel URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def health():
+    return {"status": "online", "branding": "Medisure Plus"}
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    user_text = req.message.lower().strip()
+    
+    # Check for silencers
+    if user_text in ['done', 'ok', 'stop', 'thanks', 'thank you', 'okay']:
+        db.mark_all_notifications_read()
+        return ChatResponse(type="text", message="👍 Notifications silenced.")
+
+    result = parser.parse(req.message)
+    if 'error' in result:
+        return ChatResponse(type="error", message=result['error'])
+    
+    try:
+        r_id = db.add_reminder(result['task'], result['run_time'], result['repeat_type'])
+        scheduler.schedule_reminder(r_id, result['task'], result['run_time'], result['repeat_type'])
+        
+        return ChatResponse(
+            type="reminder_created",
+            message=f"I've set a reminder for {result['task']}.",
+            data={
+                "id": r_id,
+                "task": result['task'],
+                "pretty_time": result['run_time'].strftime("%I:%M %p, %b %d")
+            }
+        )
+    except Exception as e:
+        logger.error(f"API Error: {e}")
+        return ChatResponse(type="error", message="Failed to process reminder.")
+
+@app.get("/reminders")
+def list_reminders():
+    return db.get_active_reminders()
+
+@app.delete("/reminders/{r_id}")
+def delete_reminder(r_id: int):
+    db.delete_reminder(r_id)
+    scheduler.cancel_job(r_id)
+    return {"status": "deleted"}
+
+@app.get("/notifications")
+def get_notifs():
+    return db.get_unread_notifications()
+
+@app.post("/notifications/{n_id}/read")
+def read_notif(n_id: int):
+    db.mark_notification_read(n_id)
+    return {"status": "read"}
