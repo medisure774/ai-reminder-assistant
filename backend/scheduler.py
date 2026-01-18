@@ -37,8 +37,10 @@ class SchedulerManager:
             trigger=trigger,
             id=job_id,
             args=[reminder_id, task, repeat_type],
-            replace_existing=True
+            replace_existing=True,
+            misfire_grace_time=60 # Give it a minute to catch up
         )
+        logger.info(f"Scheduled task '{task}' for {run_time} ({repeat_type})")
 
     def _job_callback(self, reminder_id, task, repeat_type):
         logger.info(f"🔔 TRIGGERED: {task}")

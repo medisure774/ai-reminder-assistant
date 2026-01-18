@@ -14,6 +14,10 @@ class ReminderParser:
     def parse(self, text: str):
         text = text.strip()
         
+        # Use current time as relative base for every parse
+        current_settings = self.settings.copy()
+        current_settings['RELATIVE_BASE'] = datetime.now()
+        
         # 1. Detect recurrence
         repeat_type = 'once'
         lower_text = text.lower()
@@ -24,7 +28,7 @@ class ReminderParser:
         
         # 2. Extract time
         try:
-            dates = dateparser.search.search_dates(text, settings=self.settings)
+            dates = dateparser.search.search_dates(text, settings=current_settings)
         except Exception:
             dates = None
 

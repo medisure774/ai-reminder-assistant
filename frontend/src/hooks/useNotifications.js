@@ -16,6 +16,9 @@ const useNotifications = () => {
             } catch (err) {
                 console.error("Error requesting notification permission:", err);
             }
+        } else if (Notification.permission === "denied") {
+            // Show a internal notification to the user that they blocked notifications
+            setNotifications([{ id: 'perm-denied', message: "🚨 Browser notifications are blocked. Please enable them in your browser settings to receive alerts." }]);
         }
     };
 
@@ -50,16 +53,32 @@ const useNotifications = () => {
             setReminders(remindersRes.data);
 
             // 3. Handle notifications
-            const unread = notifsRes.data;
-            if (unread && unread.length > 0) {
-                setNotifications(unread);
+            const unread = notifsRes.data || [];
 
+            // Always update store to clear toasts if empty
+            setNotifications(unread);
+
+            if (unread.length > 0) {
                 // Process each unread notification
                 for (const notif of unread) {
+                    // Show browser notification
                     showNotification(notif);
+
                     // Mark as read on backend
-                    await assistantApi.markRead(notif.id);
+                    try {
+                        await assistantApi.markRead(notif.id);
+                        console.log(`Notification ${notif.id} marked as read`);
+                    } catch (err) {
+                        console.error("Failed to mark notification as read:", err);
+                    }
                 }
+
+                // After processing all and marking as read, 
+                // we should probably clear the store after a few seconds
+                // so the toast doesn't just hang there.
+                setTimeout(() => {
+                    setNotifications([]);
+                }, 8000);
             }
         } catch (error) {
             console.error("Sync error:", error);
