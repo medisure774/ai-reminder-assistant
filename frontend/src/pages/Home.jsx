@@ -1,15 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Send, Bell, List } from 'lucide-react';
+import { Mic, MicOff, LogOut, Send, Bell, List } from 'lucide-react';
 import AssistantAvatar from '../components/AssistantAvatar';
 import ReminderBoard from '../components/ReminderBoard';
 import assistantApi from '../api/assistantApi';
 import useReminderStore from '../store/reminderStore';
 import useNotifications from '../hooks/useNotifications';
+import voiceInput from '../utils/voiceInput';
+import voiceOutput from '../utils/voiceOutput';
 
 const Home = () => {
     const [input, setInput] = useState('');
     const [isThinking, setIsThinking] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
+    const [lastVoiceCommand, setLastVoiceCommand] = useState('');
+
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Welcome, Medisure Plus. How can I assist you today?' }
     ]);
@@ -27,23 +33,69 @@ const Home = () => {
         window.location.href = '/login';
     };
 
-    const handleSend = async (e) => {
-        e.preventDefault();
-        if (!input.trim()) return;
+    const processMessage = async (text, isVoice = false) => {
+        if (!text.trim()) return;
 
-        const userMsg = input;
-        setInput('');
-        setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setMessages(prev => [...prev, { role: 'user', text }]);
         setIsThinking(true);
 
         try {
-            const res = await assistantApi.chat(userMsg);
-            setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+            if (isConfirming) {
+                const lower = text.toLowerCase();
+                if (lower.includes('yes') || lower.includes('ok') || lower.includes('yeah') || lower.includes('sure')) {
+                    const res = await assistantApi.chat(lastVoiceCommand, false);
+                    setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+                    if (isVoice) voiceOutput.speak(res.data.message);
+                } else {
+                    const msg = "Okay, I've canceled that reminder.";
+                    setMessages(prev => [...prev, { role: 'assistant', text: msg }]);
+                    if (isVoice) voiceOutput.speak(msg);
+                }
+                setIsConfirming(false);
+                setLastVoiceCommand('');
+            } else {
+                const res = await assistantApi.chat(text, isVoice);
+                setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+
+                if (isVoice && res.data.type === 'preview') {
+                    setIsConfirming(true);
+                    setLastVoiceCommand(text);
+                    voiceOutput.speak(res.data.message, () => {
+                        // Automatically start listening for confirmation
+                        startListening();
+                    });
+                } else if (isVoice) {
+                    voiceOutput.speak(res.data.message);
+                }
+            }
         } catch (err) {
             setMessages(prev => [...prev, { role: 'assistant', text: "Error connecting to system node." }]);
         } finally {
             setIsThinking(false);
         }
+    };
+
+    const handleSend = (e) => {
+        e.preventDefault();
+        const text = input;
+        setInput('');
+        processMessage(text, false);
+    };
+
+    const startListening = () => {
+        if (isListening) return;
+        setIsListening(true);
+        voiceInput.start(
+            (transcript) => {
+                setIsListening(false);
+                processMessage(transcript, true);
+            },
+            (err) => {
+                setIsListening(false);
+                console.error("Voice Error:", err);
+            },
+            () => setIsListening(false)
+        );
     };
 
     return (
@@ -119,15 +171,33 @@ const Home = () => {
                         <div ref={chatEndRef} />
                     </div>
 
-                    <form onSubmit={handleSend} className="mt-6 relative">
-                        <input
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="Ask me anything..."
-                            className="w-full bg-white/5 border border-white/10 p-5 pr-16 rounded-full focus:outline-none focus:border-neon-cyan transition-colors"
-                        />
-                        <button className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-neon-cyan text-black rounded-full hover:scale-105 transition-transform">
-                            <Send className="w-5 h-5" />
+                    <form onSubmit={handleSend} className="mt-6 flex items-center gap-3">
+                        <div className="relative flex-1">
+                            <input
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder={isListening ? "Listening..." : isConfirming ? "Say Yes or No..." : "Ask me anything..."}
+                                className={`w-full bg-white/5 border ${isListening ? 'border-neon-cyan animate-pulse' : 'border-white/10'} p-5 pr-16 rounded-full focus:outline-none focus:border-neon-cyan transition-all`}
+                            />
+                            <button
+                                type="submit"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-neon-cyan text-black rounded-full hover:scale-105 transition-transform"
+                            >
+                                <Send className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={startListening}
+                            className={`p-5 rounded-full transition-all ${isListening
+                                    ? 'bg-red-500 text-white animate-bounce shadow-[0_0_20px_rgba(239,68,68,0.5)]'
+                                    : isConfirming
+                                        ? 'bg-neon-cyan text-black shadow-[0_0_15px_rgba(0,255,242,0.4)]'
+                                        : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                                }`}
+                        >
+                            {isListening ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
                         </button>
                     </form>
                 </div>

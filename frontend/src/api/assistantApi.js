@@ -12,7 +12,7 @@ const api = axios.create({
 });
 
 export const assistantApi = {
-    chat: (message) => api.post('/chat', { message }),
+    chat: (message, preview = false) => api.post('/chat', { message, preview }),
     getReminders: () => api.get('/reminders'),
     deleteReminder: (id) => api.delete(`/reminders/${id}`),
     getNotifications: () => api.get('/notifications'),

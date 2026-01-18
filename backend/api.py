@@ -17,9 +17,10 @@ logger = logging.getLogger("api")
 
 class ChatRequest(BaseModel):
     message: str
+    preview: Optional[bool] = False
 
 class ChatResponse(BaseModel):
-    type: str # 'reminder_created', 'text', 'error'
+    type: str # 'reminder_created', 'text', 'error', 'preview'
     message: str
     data: Optional[dict] = None
 
@@ -58,6 +59,19 @@ async def chat(req: ChatRequest):
     result = parser.parse(req.message)
     if 'error' in result:
         return ChatResponse(type="error", message=result['error'])
+    
+    # If in preview mode, don't save to DB yet
+    if req.preview:
+        pretty_time = result['run_time'].strftime("%I:%M %p")
+        return ChatResponse(
+            type="preview",
+            message=f"Should I set a reminder for {result['task']} at {pretty_time}?",
+            data={
+                "task": result['task'],
+                "run_time": result['run_time'].isoformat(),
+                "repeat_type": result['repeat_type']
+            }
+        )
     
     try:
         r_id = db.add_reminder(result['task'], result['run_time'], result['repeat_type'])
