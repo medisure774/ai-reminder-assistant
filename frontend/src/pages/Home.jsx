@@ -5,6 +5,7 @@ import AssistantAvatar from '../components/AssistantAvatar';
 import ReminderBoard from '../components/ReminderBoard';
 import assistantApi from '../api/assistantApi';
 import useReminderStore from '../store/reminderStore';
+import useNotifications from '../hooks/useNotifications';
 
 const Home = () => {
     const [input, setInput] = useState('');
@@ -14,26 +15,10 @@ const Home = () => {
     ]);
     const chatEndRef = useRef(null);
 
-    const { setReminders, setNotifications, notifications } = useReminderStore();
+    const { setReminders, notifications } = useReminderStore();
 
-    const fetchStatus = async () => {
-        try {
-            const [r, n] = await Promise.all([
-                assistantApi.getReminders(),
-                assistantApi.getNotifications()
-            ]);
-            setReminders(r.data);
-            setNotifications(n.data);
-        } catch (err) {
-            console.error("Poll error:", err);
-        }
-    };
-
-    useEffect(() => {
-        fetchStatus();
-        const interval = setInterval(fetchStatus, 5000);
-        return () => clearInterval(interval);
-    }, []);
+    // Trigger notification hook
+    useNotifications();
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,7 +41,6 @@ const Home = () => {
         try {
             const res = await assistantApi.chat(userMsg);
             setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
-            fetchStatus();
         } catch (err) {
             setMessages(prev => [...prev, { role: 'assistant', text: "Error connecting to system node." }]);
         } finally {
@@ -107,8 +91,8 @@ const Home = () => {
                                 className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
                                 <div className={`max-w-[80%] p-4 rounded-3xl ${m.role === 'user'
-                                        ? 'bg-neon-cyan text-black font-medium rounded-br-none'
-                                        : 'bg-white/10 text-white border border-white/10 rounded-bl-none'
+                                    ? 'bg-neon-cyan text-black font-medium rounded-br-none'
+                                    : 'bg-white/10 text-white border border-white/10 rounded-bl-none'
                                     }`}>
                                     {m.text}
                                 </div>

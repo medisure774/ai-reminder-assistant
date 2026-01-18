@@ -93,4 +93,5 @@ def get_notifs():
 @app.post("/notifications/{n_id}/read")
 def read_notif(n_id: int):
     db.mark_notification_read(n_id)
+    logger.info(f"Notification {n_id} marked as read.")
     return {"status": "read"}

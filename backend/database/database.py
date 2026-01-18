@@ -53,6 +53,7 @@ class Database:
         cursor.execute("INSERT INTO notifications (message) VALUES (?)", (message,))
         conn.commit()
         conn.close()
+        logger.info(f"Notification added: {message}")
 
     def get_unread_notifications(self):
         conn = self._get_conn()
