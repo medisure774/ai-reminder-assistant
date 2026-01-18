@@ -86,8 +86,6 @@ const useNotifications = () => {
     };
 
     useEffect(() => {
-        requestPermission();
-
         // Initial sync
         syncSystem();
 
@@ -96,6 +94,11 @@ const useNotifications = () => {
 
         return () => clearInterval(interval);
     }, []);
+
+    return {
+        permission: typeof window !== 'undefined' ? Notification.permission : 'default',
+        requestPermission
+    };
 };
 
 export default useNotifications;

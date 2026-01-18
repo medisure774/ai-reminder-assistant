@@ -16,9 +16,7 @@ const Home = () => {
     const chatEndRef = useRef(null);
 
     const { setReminders, notifications } = useReminderStore();
-
-    // Trigger notification hook
-    useNotifications();
+    const { permission, requestPermission } = useNotifications();
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -68,6 +66,26 @@ const Home = () => {
                     <LogOut className="w-5 h-5" />
                 </button>
             </header>
+
+            {/* Notification Permission Banner */}
+            {permission === 'default' && (
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-neon-cyan/10 border border-neon-cyan/30 p-4 rounded-2xl flex items-center justify-between"
+                >
+                    <div className="flex items-center gap-3">
+                        <Bell className="text-neon-cyan w-5 h-5 animate-bounce" />
+                        <p className="text-sm">Enable desktop notifications to receive reminder alerts in real-time.</p>
+                    </div>
+                    <button
+                        onClick={requestPermission}
+                        className="bg-neon-cyan text-black px-4 py-2 rounded-xl text-sm font-bold hover:scale-105 transition-transform"
+                    >
+                        Enable Now
+                    </button>
+                </motion.div>
+            )}
 
             {/* Main Content Area */}
             <div className="flex flex-1 gap-6 overflow-hidden">
