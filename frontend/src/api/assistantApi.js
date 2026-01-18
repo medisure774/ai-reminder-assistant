@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Use environment variable for production (Render URL)
 // This is critical for Vercel deployment
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ai-buddy-backend-gsci.onrender.com';
 
 const api = axios.create({
     baseURL: API_BASE_URL,
