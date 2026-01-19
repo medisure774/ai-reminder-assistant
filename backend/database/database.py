@@ -118,6 +118,14 @@ class Database:
         conn.close()
         return reminders
 
+    def update_reminder_time(self, reminder_id: int, run_time):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        rt_str = run_time if isinstance(run_time, str) else run_time.strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("UPDATE reminders SET run_time = ?, status = 'active' WHERE id = ?", (rt_str, reminder_id))
+        conn.commit()
+        conn.close()
+
     def update_status(self, reminder_id, status):
         conn = self._get_conn()
         cursor = conn.cursor()

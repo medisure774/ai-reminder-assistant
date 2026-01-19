@@ -15,6 +15,13 @@ const Login = () => {
 
             <div className="flex flex-col md:flex-row items-center gap-12 max-w-5xl w-full z-10">
                 <div className="flex-1 text-center md:text-left">
+                    <motion.div
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="w-20 h-20 bg-white/10 backdrop-blur-3xl rounded-3xl p-4 border border-white/20 mb-8 flex items-center justify-center glow-cyan-subtle mx-auto md:mx-0"
+                    >
+                        <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain rounded-xl" />
+                    </motion.div>
                     <motion.h1
                         initial={{ x: -50, opacity: 0 }}
                         animate={{ x: 0, opacity: 1 }}

@@ -13,7 +13,15 @@ const Home = () => {
     const [input, setInput] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
     const [pendingReminder, setPendingReminder] = useState(null);
+    const [messages, setMessages] = useState([
+        { role: 'assistant', text: 'Welcome, Medisure Plus. How can I assist you today?' }
+    ]);
+    const chatEndRef = useRef(null);
+
+    const { reminders, setReminders, notifications } = useReminderStore();
+    const { permission, requestPermission } = useNotifications();
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

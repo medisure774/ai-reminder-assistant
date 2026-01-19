@@ -9,9 +9,9 @@ const ReminderBoard = () => {
     const today = new Date().toDateString();
 
     const categorized = {
-        today: reminders.filter(r => r.status !== 'done' && new Date(r.run_time).toDateString() === today),
-        upcoming: reminders.filter(r => r.status !== 'done' && new Date(r.run_time).toDateString() !== today),
-        done: reminders.filter(r => r.status === 'done')
+        today: (reminders || []).filter(r => r.status !== 'done' && new Date(r.run_time).toDateString() === today),
+        upcoming: (reminders || []).filter(r => r.status !== 'done' && new Date(r.run_time).toDateString() !== today),
+        done: (reminders || []).filter(r => r.status === 'done')
     };
 
     const Section = ({ title, items, icon: Icon }) => (

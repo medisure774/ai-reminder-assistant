@@ -144,9 +144,35 @@ def read_notif(n_id: int):
 
 @app.post("/reminders/{r_id}/complete")
 def complete_reminder(r_id: int):
-    db.complete_reminder(r_id)
-    scheduler.cancel_job(r_id)
-    return {"status": "completed"}
+    # Get reminder info
+    reminders = db.get_active_reminders()
+    r = next((x for x in reminders if x['id'] == r_id), None)
+    
+    if not r:
+        return {"status": "error", "message": "Reminder not found"}
+
+    if r['repeat_type'] == 'once':
+        db.complete_reminder(r_id)
+        scheduler.cancel_job(r_id)
+        return {"status": "completed"}
+    else:
+        # For recurring, we just acknowledge the completion for today 
+        # and keep the job running in APScheduler (which already uses Cron/Interval)
+        # We might want to update the 'run_time' in DB to show the NEXT occurrence
+        from datetime import datetime, timedelta
+        rt = r['run_time']
+        if isinstance(rt, str):
+            rt = datetime.strptime(rt.split('.')[0], '%Y-%m-%d %H:%M:%S')
+        
+        next_run = rt
+        if r['repeat_type'] == 'daily':
+            next_run = rt + timedelta(days=1)
+        elif r['repeat_type'] == 'weekly':
+            next_run = rt + timedelta(weeks=1)
+            
+        # Update run_time in DB so UI shows the next one
+        db.update_reminder_time(r_id, next_run)
+        return {"status": "next_scheduled", "next_run": next_run.isoformat()}
 
 @app.post("/reminders/{r_id}/snooze")
 def snooze_reminder(r_id: int, minutes: int = 10):
