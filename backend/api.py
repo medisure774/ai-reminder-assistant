@@ -28,10 +28,13 @@ class ChatResponse(BaseModel):
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start scheduler and load jobs
+    logger.info("📦 Backend initializing...")
     scheduler.start()
     scheduler.load_jobs_from_db()
+    logger.info("✅ Startup complete. System ready.")
     yield
     # Shutdown logic if needed
+    logger.info("🛑 Backend shutting down.")
 
 app = FastAPI(title="AI BUDDY API", lifespan=lifespan)
 
@@ -45,8 +48,13 @@ app.add_middleware(
 )
 
 @app.get("/")
+def home():
+    return {"status": "online", "branding": "AI BUDDY", "message": "Backend is active."}
+
+@app.get("/health")
 def health():
-    return {"status": "online", "branding": "Medisure Plus"}
+    """Lightweight endpoint for uptime checks."""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):

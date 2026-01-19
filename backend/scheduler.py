@@ -1,3 +1,6 @@
+import os
+import urllib.request
+from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -11,12 +14,39 @@ class SchedulerManager:
     def __init__(self):
         self.scheduler = BackgroundScheduler()
         self.is_running = False
+        self.app_url = os.getenv("APP_URL")
 
     def start(self):
         if not self.is_running:
             self.scheduler.start()
             self.is_running = True
-            logger.info("Scheduler started.")
+            logger.info("🚀 Scheduler started.")
+            self.schedule_self_ping()
+
+    def schedule_self_ping(self):
+        if not self.app_url:
+            logger.warning("⚠️  APP_URL environment variable not set. Self-ping job skipped.")
+            return
+
+        self.scheduler.add_job(
+            self._self_ping_callback,
+            trigger=IntervalTrigger(minutes=10),
+            id="self_ping_job",
+            replace_existing=True
+        )
+        logger.info(f"📡 Self-ping scheduled to {self.app_url} every 10 minutes.")
+
+    def _self_ping_callback(self):
+        health_url = f"{self.app_url.rstrip('/')}/health"
+        try:
+            # Simple GET request using standard library
+            with urllib.request.urlopen(health_url, timeout=10) as response:
+                if response.status == 200:
+                    logger.info("💓 Self-ping success.")
+                else:
+                    logger.warning(f"❗ Self-ping status code: {response.status}")
+        except Exception as e:
+            logger.warning(f"❌ Self-ping failed: {e}")
 
     def schedule_reminder(self, reminder_id, task, run_time, repeat_type):
         job_id = f"reminder_{reminder_id}"
