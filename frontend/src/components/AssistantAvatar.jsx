@@ -47,8 +47,8 @@ const LogoMesh = ({ isThinking }) => {
 
 const AssistantAvatar = ({ isThinking, isConfirming }) => {
     return (
-        <div className="w-full h-full min-h-[300px] flex items-center justify-center relative pointer-events-none">
-            <Canvas camera={{ position: [0, 0, 8] }}>
+        <div className="w-full h-full min-h-[300px] flex items-center justify-center relative pointer-events-none" style={{ minHeight: '350px' }}>
+            <Canvas camera={{ position: [0, 0, 8] }} style={{ width: '100%', height: '100%' }}>
                 <ambientLight intensity={1.5} />
                 <pointLight position={[10, 10, 10]} intensity={2.5} />
                 <pointLight position={[-10, -10, -10]} intensity={1} color="#bc13fe" />

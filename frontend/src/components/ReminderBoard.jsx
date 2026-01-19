@@ -38,20 +38,19 @@ const ReminderBoard = () => {
     );
 
     return (
-        <div className="p-8 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-neon-cyan/20 rounded-2xl border border-neon-cyan/40">
-                        <LayoutDashboard className="text-neon-cyan w-6 h-6" />
+        <div className="p-4 h-full flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <div className="p-2 bg-neon-cyan/20 rounded-xl border border-neon-cyan/40">
+                        <LayoutDashboard className="text-neon-cyan w-4 h-4" />
                     </div>
                     <div>
-                        <h2 className="font-black text-2xl uppercase tracking-tighter">Command Center</h2>
-                        <p className="text-[10px] text-neon-cyan uppercase tracking-[0.3em]">Lifecycle Management</p>
+                        <h2 className="font-black text-sm uppercase tracking-tighter">Command Center</h2>
                     </div>
                 </div>
             </div>
 
-            <div className="flex gap-10 overflow-x-auto pb-4 custom-scrollbar flex-1 items-start">
+            <div className="flex gap-6 overflow-x-auto pb-4 custom-scrollbar flex-1 items-start">
                 <Section title="Today" items={categorized.today} icon={Calendar} />
                 <Section title="Upcoming" items={categorized.upcoming} icon={LayoutDashboard} />
                 <Section title="Resolved" items={categorized.done} icon={History} />
