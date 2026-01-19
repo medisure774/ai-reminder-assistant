@@ -22,12 +22,22 @@ class ReminderParser:
         current_settings = self.settings.copy()
         if local_time_str:
             try:
-                # ISO format parse
                 current_settings['RELATIVE_BASE'] = datetime.fromisoformat(local_time_str.replace('Z', '+00:00')).replace(tzinfo=None)
             except:
                 current_settings['RELATIVE_BASE'] = datetime.now()
         else:
             current_settings['RELATIVE_BASE'] = datetime.now()
+
+        # Pre-process common phrases that parser might miss in sentence
+        text_proc = text.lower()
+        if 'tomorrow morning' in text_proc:
+            text = text.replace('tomorrow morning', 'at 9am tomorrow')
+        elif 'tomorrow afternoon' in text_proc:
+            text = text.replace('tomorrow afternoon', 'at 2pm tomorrow')
+        elif 'tomorrow evening' in text_proc:
+            text = text.replace('tomorrow evening', 'at 7pm tomorrow')
+        elif 'tonight' in text_proc:
+            text = text.replace('tonight', 'at 8pm today')
         
         # 1. Detect recurrence
         repeat_type = 'once'
@@ -50,18 +60,29 @@ class ReminderParser:
         
         # 3. Extract Task
         clean_text = text.replace(matched_string, '')
+        
+        # Remove recurring keywords from task name
+        clean_text = re.sub(r'(?i)\b(daily|every day|weekly|every week|every|day|week)\b', '', clean_text)
+        
         clean_text = re.sub(r'(?i)^(remind me (to|at)?|remind|me)\s*', '', clean_text)
-        clean_text = re.sub(r'(?i)\s*(to|on|at)\s*$', '', clean_text)
+        clean_text = re.sub(r'(?i)\s*(to|on|at|at)\s*$', '', clean_text)
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
         task = clean_text if clean_text else "Reminder"
         
-        logger.info(f"Parsed: matched='{matched_string}', run_time='{run_time}', task='{task}'")
+        # 4. Detect if time is potentially vague
+        is_vague = False
+        if any(word in lower_text for word in ['later', 'sometime', 'soon']):
+            is_vague = True
+
+        logger.info(f"Parsed: matched='{matched_string}', run_time='{run_time}', task='{task}', repeat='{repeat_type}', vague={is_vague}")
         
         return {
             'task': task,
             'run_time': run_time,
-            'repeat_type': repeat_type
+            'repeat_type': repeat_type,
+            'is_vague': is_vague,
+            'matched_string': matched_string
         }
 
 parser = ReminderParser()

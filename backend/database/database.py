@@ -29,7 +29,10 @@ class Database:
                 task TEXT NOT NULL,
                 run_time DATETIME NOT NULL,
                 repeat_type TEXT DEFAULT 'once', -- 'once', 'daily', 'weekly'
-                status TEXT DEFAULT 'active', -- 'active', 'done', 'cancelled'
+                repeat_payload TEXT, -- JSON for custom repeats or metadata
+                status TEXT DEFAULT 'active', -- 'active', 'done', 'cancelled', 'snoozed'
+                snooze_until DATETIME,
+                completion_time DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -106,8 +109,11 @@ class Database:
                 'task': r[1],
                 'run_time': r[2], 
                 'repeat_type': r[3],
-                'status': r[4],
-                'created_at': r[5]
+                'repeat_payload': r[4],
+                'status': r[5],
+                'snooze_until': r[6],
+                'completion_time': r[7],
+                'created_at': r[8]
             })
         conn.close()
         return reminders
@@ -121,6 +127,22 @@ class Database:
 
     def delete_reminder(self, reminder_id):
         self.update_status(reminder_id, 'cancelled')
+
+    def complete_reminder(self, reminder_id):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("UPDATE reminders SET status = 'done', completion_time = ? WHERE id = ?", (now, reminder_id))
+        conn.commit()
+        conn.close()
+
+    def snooze_reminder(self, reminder_id, snooze_until):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        s_str = snooze_until if isinstance(snooze_until, str) else snooze_until.strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("UPDATE reminders SET status = 'snoozed', snooze_until = ? WHERE id = ?", (s_str, reminder_id))
+        conn.commit()
+        conn.close()
 
 # Global DB instance
 db = Database()

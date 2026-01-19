@@ -13,16 +13,7 @@ const Home = () => {
     const [input, setInput] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const [isListening, setIsListening] = useState(false);
-    const [isConfirming, setIsConfirming] = useState(false);
-    const [lastVoiceCommand, setLastVoiceCommand] = useState('');
-
-    const [messages, setMessages] = useState([
-        { role: 'assistant', text: 'Welcome, Medisure Plus. How can I assist you today?' }
-    ]);
-    const chatEndRef = useRef(null);
-
-    const { setReminders, notifications } = useReminderStore();
-    const { permission, requestPermission } = useNotifications();
+    const [pendingReminder, setPendingReminder] = useState(null);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,9 +33,15 @@ const Home = () => {
         try {
             if (isConfirming) {
                 const lower = text.toLowerCase();
-                if (lower.includes('yes') || lower.includes('ok') || lower.includes('yeah') || lower.includes('sure')) {
-                    const res = await assistantApi.chat(lastVoiceCommand, false);
-                    setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+                const isPositive = lower.includes('yes') || lower.includes('ok') || lower.includes('yeah') || lower.includes('sure') || lower.includes('confirm');
+
+                if (isPositive && pendingReminder) {
+                    const res = await assistantApi.chat(pendingReminder.originalCommand, false);
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        text: res.data.message,
+                        type: 'success'
+                    }]);
                     if (isVoice) voiceOutput.speak(res.data.message);
                 } else {
                     const msg = "Okay, I've canceled that reminder.";
@@ -52,19 +49,32 @@ const Home = () => {
                     if (isVoice) voiceOutput.speak(msg);
                 }
                 setIsConfirming(false);
-                setLastVoiceCommand('');
+                setPendingReminder(null);
             } else {
-                const res = await assistantApi.chat(text, isVoice);
-                setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+                const res = await assistantApi.chat(text, false); // Always preview first if it looks like a reminder
 
-                if (isVoice && res.data.type === 'preview') {
+                if (res.data.type === 'preview') {
                     setIsConfirming(true);
-                    setLastVoiceCommand(text);
-                    voiceOutput.speak(res.data.message, () => {
-                        startListening();
+                    setPendingReminder({
+                        ...res.data.data,
+                        originalCommand: text
                     });
-                } else if (isVoice) {
-                    voiceOutput.speak(res.data.message);
+
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        text: res.data.message,
+                        type: 'preview',
+                        payload: res.data.data
+                    }]);
+
+                    if (isVoice) {
+                        voiceOutput.speak(res.data.message, () => {
+                            startListening();
+                        });
+                    }
+                } else {
+                    setMessages(prev => [...prev, { role: 'assistant', text: res.data.message }]);
+                    if (isVoice) voiceOutput.speak(res.data.message);
                 }
             }
         } catch (err) {
@@ -161,7 +171,7 @@ const Home = () => {
             <div className="flex flex-1 gap-6 overflow-hidden">
                 {/* Left: Avatar Panel */}
                 <div className="w-[30%] bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] flex flex-col items-center justify-center p-8 relative">
-                    <AssistantAvatar isThinking={isThinking} />
+                    <AssistantAvatar isThinking={isThinking} isConfirming={isConfirming} />
                     <div className="text-center mt-8">
                         <h3 className="text-xl font-bold text-neon-cyan">Medisure Node</h3>
                         <p className="text-sm text-gray-500 mt-2">{isListening ? "Listening to voice..." : isConfirming ? "Waiting for confirmation..." : "Ready for instructions"}</p>
@@ -170,24 +180,64 @@ const Home = () => {
 
                 {/* Right: Chat Panel */}
                 <div className="flex-1 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] flex flex-col p-6">
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-                        {messages.map((m, i) => (
-                            <motion.div
-                                key={i}
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div className={`max-w-[80%] p-4 rounded-3xl ${m.role === 'user'
-                                    ? 'bg-neon-cyan text-black font-bold shadow-[0_0_15px_rgba(0,255,242,0.3)] rounded-br-none'
-                                    : m.isAlert
-                                        ? 'bg-red-500/20 text-red-100 border-2 border-red-500/50 rounded-bl-none shadow-[0_0_20px_rgba(239,68,68,0.2)]'
-                                        : 'bg-white/10 text-white border border-white/10 rounded-bl-none'
-                                    }`}>
-                                    {m.text}
-                                </div>
-                            </motion.div>
-                        ))}
+                    <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
+                        <AnimatePresence mode="popLayout">
+                            {messages.map((m, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div className={`max-w-[85%] p-5 rounded-[2rem] transition-all ${m.role === 'user'
+                                        ? 'bg-neon-cyan text-black font-bold shadow-[0_0_30px_rgba(0,255,242,0.2)] rounded-br-none'
+                                        : m.type === 'preview'
+                                            ? 'bg-white/10 border-2 border-neon-cyan/30 rounded-bl-none shadow-[0_0_40px_rgba(0,255,242,0.1)]'
+                                            : m.isAlert
+                                                ? 'bg-red-500/10 text-red-100 border border-red-500/30 rounded-bl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]'
+                                                : 'bg-white/5 text-white border border-white/10 rounded-bl-none'
+                                        }`}>
+
+                                        {m.type === 'preview' ? (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center gap-3 text-neon-cyan mb-2">
+                                                    <div className="p-2 bg-neon-cyan/20 rounded-xl">
+                                                        <Bell className="w-5 h-5" />
+                                                    </div>
+                                                    <span className="font-black uppercase tracking-tighter">Confirmation Required</span>
+                                                </div>
+
+                                                <p className="text-lg leading-relaxed">{m.text}</p>
+
+                                                {m.payload?.is_vague && (
+                                                    <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl text-yellow-500 text-xs">
+                                                        <Mic className="w-4 h-4" />
+                                                        <span>I'm guessing the time. Is this okay?</span>
+                                                    </div>
+                                                )}
+
+                                                <div className="flex gap-2 pt-2">
+                                                    <button
+                                                        onClick={() => processMessage('Yes')}
+                                                        className="flex-1 py-3 bg-neon-cyan text-black rounded-2xl font-black uppercase text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-neon-cyan/20"
+                                                    >
+                                                        Confirm
+                                                    </button>
+                                                    <button
+                                                        onClick={() => processMessage('No')}
+                                                        className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl font-bold text-xs hover:bg-white/10 transition-all"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="leading-relaxed">{m.text}</p>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
                         <div ref={chatEndRef} />
                     </div>
 
@@ -235,16 +285,39 @@ const Home = () => {
                         initial={{ opacity: 0, y: 100, scale: 0.8 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
-                        className="fixed bottom-32 right-12 z-[100] p-6 bg-red-600 text-white rounded-[30px] shadow-[0_0_40px_rgba(255,0,0,0.5)] border-2 border-white/20 flex flex-col gap-2 min-w-[300px]"
+                        className="fixed bottom-32 right-12 z-[100] p-6 bg-white/5 backdrop-blur-3xl text-white rounded-[40px] shadow-[0_0_60px_rgba(0,0,0,0.5)] border-2 border-neon-cyan/20 flex flex-col gap-5 min-w-[350px] glow-cyan-subtle"
                     >
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                                <Bell className="text-white w-6 h-6" />
+                            <div className="w-12 h-12 bg-neon-cyan/20 rounded-2xl flex items-center justify-center animate-bounce shadow-inner">
+                                <Bell className="text-neon-cyan w-6 h-6" />
                             </div>
                             <div>
-                                <h4 className="font-black text-xl uppercase tracking-tighter">New Reminder</h4>
-                                <p className="text-white/90 font-medium">{notifications[0].message}</p>
+                                <h4 className="font-black text-xl uppercase tracking-tighter text-neon-cyan">Reminder Active</h4>
+                                <p className="text-white/90 font-medium text-sm pr-4">{notifications[0].message}</p>
                             </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    // Extract ID if possible or use a specialized endpoint
+                                    // For now, we'll mark the latest active as done
+                                    const latest = reminders.filter(r => r.status === 'active').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                                    if (latest) assistantApi.completeReminder(latest.id).then(() => setNotifications([]));
+                                }}
+                                className="flex-1 py-3 bg-neon-cyan text-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.05] transition-transform"
+                            >
+                                Done
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const latest = reminders.filter(r => r.status === 'active').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                                    if (latest) assistantApi.snoozeReminder(latest.id, 10).then(() => setNotifications([]));
+                                }}
+                                className="flex-1 py-3 bg-white/10 border border-white/10 rounded-2xl font-bold text-[10px] tracking-widest hover:bg-white/20 transition-all uppercase"
+                            >
+                                Snooze
+                            </button>
                         </div>
                     </motion.div>
                 )}

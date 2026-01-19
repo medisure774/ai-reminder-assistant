@@ -19,6 +19,8 @@ export const assistantApi = {
     }),
     getReminders: () => api.get('/reminders'),
     deleteReminder: (id) => api.delete(`/reminders/${id}`),
+    completeReminder: (id) => api.post(`/reminders/${id}/complete`),
+    snoozeReminder: (id, minutes = 10) => api.post(`/reminders/${id}/snooze`, null, { params: { minutes } }),
     getNotifications: () => api.get('/notifications'),
     markRead: (id) => api.post(`/notifications/${id}/read`),
     checkHealth: () => api.get('/'),

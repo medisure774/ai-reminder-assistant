@@ -99,7 +99,9 @@ async def chat(req: ChatRequest):
             data={
                 "task": result['task'],
                 "run_time": result['run_time'].isoformat(),
-                "repeat_type": result['repeat_type']
+                "repeat_type": result['repeat_type'],
+                "is_vague": result['is_vague'],
+                "matched_string": result['matched_string']
             }
         )
     
@@ -139,3 +141,28 @@ def read_notif(n_id: int):
     db.mark_notification_read(n_id)
     logger.info(f"Notification {n_id} marked as read.")
     return {"status": "read"}
+
+@app.post("/reminders/{r_id}/complete")
+def complete_reminder(r_id: int):
+    db.complete_reminder(r_id)
+    scheduler.cancel_job(r_id)
+    return {"status": "completed"}
+
+@app.post("/reminders/{r_id}/snooze")
+def snooze_reminder(r_id: int, minutes: int = 10):
+    # Calculate snooze time
+    from datetime import timedelta
+    snooze_until = datetime.now() + timedelta(minutes=minutes)
+    
+    # Update DB
+    db.snooze_reminder(r_id, snooze_until)
+    
+    # Get current reminder info to re-schedule
+    reminders = db.get_active_reminders() # This might be inefficient, but works for MVP
+    r = next((x for x in reminders if x['id'] == r_id), None)
+    
+    if r:
+        scheduler.schedule_reminder(r_id, r['task'], snooze_until, 'once') # Snooze is always a 'once' trigger
+        return {"status": "snoozed", "until": snooze_until.isoformat()}
+    
+    return {"status": "error", "message": "Reminder not found"}

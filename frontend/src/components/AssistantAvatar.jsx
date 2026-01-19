@@ -23,6 +23,9 @@ const LogoMesh = ({ isThinking }) => {
         if (isThinking) {
             meshRef.current.rotation.y += 0.1
             meshRef.current.scale.setScalar(1.2 + Math.sin(t * 10) * 0.05)
+        } else if (isConfirming) {
+            meshRef.current.rotation.y += 0.04
+            meshRef.current.scale.setScalar(1.1 + Math.sin(t * 4) * 0.03)
         } else {
             meshRef.current.rotation.y += 0.015
         }
@@ -42,7 +45,7 @@ const LogoMesh = ({ isThinking }) => {
     )
 }
 
-const AssistantAvatar = ({ isThinking }) => {
+const AssistantAvatar = ({ isThinking, isConfirming }) => {
     return (
         <div className="w-full h-full min-h-[300px] flex items-center justify-center relative pointer-events-none">
             <Canvas camera={{ position: [0, 0, 8] }}>
@@ -56,7 +59,7 @@ const AssistantAvatar = ({ isThinking }) => {
                         <meshStandardMaterial color="#00f3ff" wireframe />
                     </mesh>
                 }>
-                    <LogoMesh isThinking={isThinking} />
+                    <LogoMesh isThinking={isThinking} isConfirming={isConfirming} />
                 </Suspense>
             </Canvas>
         </div>
