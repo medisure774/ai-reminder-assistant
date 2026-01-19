@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, LogOut, Send, Bell, List } from 'lucide-react';
+import { Mic, MicOff, LogOut, Send, Bell, Settings, MapPin, Activity, Cpu } from 'lucide-react';
 import AssistantAvatar from '../components/AssistantAvatar';
-import ReminderBoard from '../components/ReminderBoard';
 import assistantApi from '../api/assistantApi';
 import useReminderStore from '../store/reminderStore';
 import useNotifications from '../hooks/useNotifications';
@@ -59,7 +58,7 @@ const Home = () => {
                 setIsConfirming(false);
                 setPendingReminder(null);
             } else {
-                const res = await assistantApi.chat(text, false); // Always preview first if it looks like a reminder
+                const res = await assistantApi.chat(text, false);
 
                 if (res.data.type === 'preview') {
                     setIsConfirming(true);
@@ -115,223 +114,251 @@ const Home = () => {
         );
     };
 
-    // Sync notifications to chat history
-    useEffect(() => {
-        if (notifications.length > 0) {
-            notifications.forEach(notif => {
-                const isDuplicate = messages.some(m => m.text === notif.message && m.role === 'assistant');
-                if (!isDuplicate) {
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        text: notif.message,
-                        isAlert: true
-                    }]);
-                }
-            });
-        }
-    }, [notifications]);
+    // Get the latest assistant message to display prominently
+    const latestAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant');
 
     return (
-        <div className="flex flex-col h-screen bg-[#0a0a12] p-6 gap-6">
-            {/* Header */}
-            <header className="flex justify-between items-center bg-white/5 backdrop-blur-xl border border-white/10 p-4 rounded-3xl">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-neon-cyan/20 rounded-full flex items-center justify-center border border-neon-cyan/40">
-                        <Bell className="text-neon-cyan w-5 h-5" />
+        <div className="flex h-screen w-full flex-col bg-background-dark text-white font-body selection:bg-primary/30 overflow-hidden">
+            {/* Top Navigation */}
+            <header className="flex items-center justify-between border-b border-white/10 bg-background-dark/50 backdrop-blur-md px-8 py-4 z-50">
+                <div className="flex items-center gap-8">
+                    <div className="flex items-center gap-3">
+                        <div className="size-8 bg-primary rounded-lg flex items-center justify-center text-background-dark shadow-[0_0_15px_rgba(0,191,255,0.5)]">
+                            <span className="material-symbols-outlined font-bold">rocket_launch</span>
+                        </div>
+                        <h2 className="font-display text-xl font-bold tracking-tight">AI BUDDY</h2>
                     </div>
-                    <div>
-                        <h2 className="font-bold text-lg">AI Assistant</h2>
-                        <p className="text-xs text-neon-cyan uppercase tracking-widest">Active System</p>
-                    </div>
+                    <nav className="hidden md:flex items-center gap-6">
+                        <button className="text-primary transition-colors text-sm font-medium">Command Center</button>
+                        <button className="text-white/60 hover:text-primary transition-colors text-sm font-medium" onClick={requestPermission}>Notifications</button>
+                    </nav>
                 </div>
-                <button
-                    onClick={handleLogout}
-                    className="p-3 hover:bg-red-500/20 rounded-full transition-colors text-red-400"
-                >
-                    <LogOut className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-4">
+                    <div className="bg-white/5 px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
+                        <div className={`size-2 bg-primary rounded-full shadow-[0_0_8px_#00bfff] ${isListening ? 'animate-ping' : 'animate-pulse'}`}></div>
+                        <span className="text-xs font-mono text-primary uppercase tracking-widest">{isListening ? 'Voice Active' : 'System Online'}</span>
+                    </div>
+                    <button onClick={handleLogout} className="size-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-red-400 transition-colors">
+                        <LogOut className="w-5 h-5" />
+                    </button>
+                    <div className="size-10 rounded-full bg-cover bg-center border border-primary/30" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDSO2Ii6t6l56zKScmPehX76mEyPNgEnsmM8WGjdNHW1L0FCSPaks7N_df3TaznDq3AvYFHvySmcVkbeanjG2Zm7IjLhnXKnOlGTlY8Hvjb_gbdiBcW9SgCrJ0I-vgInlj0cOHBP4TIlmFW84FCF3MeCZeiAO_Y5895cPJsOwU4xP4Qn52bXGW-uk09s88hSlrO-Dj6y3BgY6aVFNCrKNIXhdUfq_mU5kvwoEzm8sHHMJTND3Jq8_xG47AMnVq-cFZnsKTNMDPDeKA')" }}></div>
+                </div>
             </header>
 
-            {/* Notification Permission Banner */}
-            {permission === 'default' && (
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-neon-cyan/20 border border-neon-cyan p-4 rounded-2xl flex items-center justify-between glow-cyan mx-4"
-                >
-                    <div className="flex items-center gap-3">
-                        <Bell className="text-neon-cyan w-6 h-6 animate-bounce" />
-                        <div>
-                            <p className="font-bold text-neon-cyan">Alerts are Disabled</p>
-                            <p className="text-sm opacity-80">Enable desktop notifications to receive real-time voice and text alerts.</p>
+            <main className="flex flex-1 overflow-hidden">
+                {/* Left Panel: AI Token & Avatar */}
+                <aside className="w-1/3 border-r border-white/10 flex flex-col items-center justify-center relative bg-black/20">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,191,255,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+
+                    {/* Reactive 3D AI Token Container */}
+                    <div className="relative flex flex-col items-center w-full">
+                        <div className="relative size-80 flex items-center justify-center">
+                            {/* Replaced generic token with AssistantAvatar */}
+                            <AssistantAvatar isThinking={isThinking} isConfirming={isConfirming} />
+                        </div>
+
+                        <div className="mt-8 text-center">
+                            <p className={`font-display text-2xl font-bold tracking-widest uppercase ${isThinking ? 'text-primary animate-pulse' : 'text-white'}`}>
+                                {isThinking ? "Thinking..." : isConfirming ? "Awaiting Input" : "Standby"}
+                            </p>
+                            <p className="text-white/40 font-mono text-xs mt-2">BUDDY STATUS: {isThinking ? 'PROCESSING REQUEST' : 'READY'}</p>
+                        </div>
+
+                        {/* Brain Activity HUD */}
+                        <div className="mt-16 grid grid-cols-3 gap-8 px-8 w-full max-w-sm">
+                            <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-tighter">Logic Ops</span>
+                                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div
+                                        animate={{ width: isThinking ? ["20%", "80%", "40%"] : "20%" }}
+                                        transition={{ duration: 0.5, repeat: isThinking ? Infinity : 0 }}
+                                        className="h-full bg-primary shadow-[0_0_8px_#00bfff]"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-tighter">Memory Link</span>
+                                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div
+                                        animate={{ width: isThinking ? ["30%", "60%", "30%"] : "40%" }}
+                                        transition={{ duration: 0.8, repeat: isThinking ? Infinity : 0 }}
+                                        className="h-full bg-primary shadow-[0_0_8px_#00bfff]"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-tighter">Neural Flux</span>
+                                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div
+                                        animate={{ width: isListening ? ["10%", "90%", "10%"] : "10%" }}
+                                        transition={{ duration: 0.2, repeat: isListening ? Infinity : 0 }}
+                                        className="h-full bg-primary shadow-[0_0_8px_#00bfff]"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <button
-                        onClick={requestPermission}
-                        className="bg-neon-cyan text-black px-6 py-2 rounded-xl text-sm font-bold hover:scale-105 transition-transform shadow-lg"
-                    >
-                        Enable Now
-                    </button>
-                </motion.div>
-            )}
+                </aside>
 
-            {/* Main Content Area */}
-            <div className="flex flex-1 gap-6 overflow-hidden">
-                {/* Left: Avatar Panel */}
-                <div className="w-[30%] bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] flex flex-col items-center justify-center p-8 relative">
-                    <AssistantAvatar isThinking={isThinking} isConfirming={isConfirming} />
-                    <div className="text-center mt-8">
-                        <h3 className="text-xl font-bold text-neon-cyan">Medisure Node</h3>
-                        <p className="text-sm text-gray-500 mt-2">{isListening ? "Listening to voice..." : isConfirming ? "Waiting for confirmation..." : "Ready for instructions"}</p>
-                    </div>
-                </div>
+                {/* Center/Main Panel: Interaction */}
+                <section className="flex-1 flex flex-col items-center justify-start p-12 overflow-y-auto relative">
+                    <div className="w-full max-w-2xl space-y-8 pb-32">
+                        {/* Header Info */}
+                        <div className="flex flex-col gap-2 mb-8">
+                            <h1 className="font-display text-4xl font-black tracking-tighter text-white">COMMAND CENTER</h1>
+                            <p className="text-white/50 text-lg">Mission control for your personal productivity.</p>
+                        </div>
 
-                {/* Right: Chat Panel */}
-                <div className="flex-1 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] flex flex-col p-6">
-                    <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
-                        <AnimatePresence mode="popLayout">
-                            {messages.map((m, i) => (
-                                <motion.div
-                                    key={i}
-                                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                >
-                                    <div className={`max-w-[85%] p-5 rounded-[2rem] transition-all ${m.role === 'user'
-                                        ? 'bg-neon-cyan text-black font-bold shadow-[0_0_30px_rgba(0,255,242,0.2)] rounded-br-none'
-                                        : m.type === 'preview'
-                                            ? 'bg-white/10 border-2 border-neon-cyan/30 rounded-bl-none shadow-[0_0_40px_rgba(0,255,242,0.1)]'
-                                            : m.isAlert
-                                                ? 'bg-red-500/10 text-red-100 border border-red-500/30 rounded-bl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]'
-                                                : 'bg-white/5 text-white border border-white/10 rounded-bl-none'
-                                        }`}>
-
-                                        {m.type === 'preview' ? (
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-3 text-neon-cyan mb-2">
-                                                    <div className="p-2 bg-neon-cyan/20 rounded-xl">
-                                                        <Bell className="w-5 h-5" />
-                                                    </div>
-                                                    <span className="font-black uppercase tracking-tighter">Confirmation Required</span>
-                                                </div>
-
-                                                <p className="text-lg leading-relaxed">{m.text}</p>
-
-                                                {m.payload?.is_vague && (
-                                                    <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl text-yellow-500 text-xs">
-                                                        <Mic className="w-4 h-4" />
-                                                        <span>I'm guessing the time. Is this okay?</span>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex gap-2 pt-2">
-                                                    <button
-                                                        onClick={() => processMessage('Yes')}
-                                                        className="flex-1 py-3 bg-neon-cyan text-black rounded-2xl font-black uppercase text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-neon-cyan/20"
-                                                    >
-                                                        Confirm
-                                                    </button>
-                                                    <button
-                                                        onClick={() => processMessage('No')}
-                                                        className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl font-bold text-xs hover:bg-white/10 transition-all"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="leading-relaxed">{m.text}</p>
-                                        )}
+                        {/* Recent Chat History (Last few messages) */}
+                        <div className="space-y-4 mb-4 opacity-70 hover:opacity-100 transition-opacity">
+                            {messages.slice(-3, -1).map((m, i) => (
+                                <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`p-4 rounded-xl text-sm ${m.role === 'user' ? 'bg-white/10 text-white' : 'glass-panel text-white/80'}`}>
+                                        {m.text}
                                     </div>
                                 </motion.div>
                             ))}
+                        </div>
+
+                        {/* AI Message (Latest) */}
+                        {latestAssistantMessage && (
+                            <motion.div
+                                key={latestAssistantMessage.text}
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="flex items-start gap-4 mb-10"
+                            >
+                                <div className="size-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/30 shrink-0">
+                                    <span className="material-symbols-outlined">smart_toy</span>
+                                </div>
+                                <div className="flex flex-col gap-2 w-full">
+                                    <p className="text-primary/70 text-xs font-bold uppercase tracking-widest">AI BUDDY</p>
+                                    <div className="glass-panel px-6 py-4 rounded-2xl rounded-tl-none border-l-4 border-l-primary">
+                                        <p className="text-white/90 leading-relaxed text-lg">{latestAssistantMessage.text}</p>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {/* Confirmation Glass Card - Show only when confirming a reminder */}
+                        <AnimatePresence>
+                            {isConfirming && pendingReminder && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -20 }}
+                                    className="glass-panel p-8 rounded-[2rem] border-primary/20 shadow-2xl relative group overflow-hidden"
+                                >
+                                    <div className="absolute top-0 right-0 p-4 opacity-20">
+                                        <span className="material-symbols-outlined text-6xl rotate-12">alarm</span>
+                                    </div>
+                                    <div className="relative z-10">
+                                        <p className="text-primary text-xs font-bold tracking-[0.3em] mb-4 uppercase">System Prompt</p>
+                                        <h2 className="font-display text-3xl font-bold tracking-tight text-white mb-8">INITIALIZE REMINDER?</h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                                                <div className="flex items-center gap-2 text-primary/60 mb-1">
+                                                    <span className="material-symbols-outlined text-sm">assignment</span>
+                                                    <span class="text-[10px] font-bold uppercase">Task</span>
+                                                </div>
+                                                <p className="text-white font-medium truncate" title={pendingReminder.task}>{pendingReminder.task}</p>
+                                            </div>
+                                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                                                <div className="flex items-center gap-2 text-primary/60 mb-1">
+                                                    <span className="material-symbols-outlined text-sm">schedule</span>
+                                                    <span class="text-[10px] font-bold uppercase">Time</span>
+                                                </div>
+                                                <p className="text-white font-medium">{pendingReminder.time}</p>
+                                            </div>
+                                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                                                <div className="flex items-center gap-2 text-primary/60 mb-1">
+                                                    <span className="material-symbols-outlined text-sm">sync</span>
+                                                    <span class="text-[10px] font-bold uppercase">Repeat</span>
+                                                </div>
+                                                <p className="text-white font-medium capitalize">{pendingReminder.repeat || 'None'}</p>
+                                            </div>
+                                        </div>
+                                        {/* Action Bar */}
+                                        <div className="flex flex-wrap gap-4">
+                                            <button
+                                                onClick={() => processMessage('Yes')}
+                                                className="flex-1 min-w-[140px] flex items-center justify-center gap-2 bg-primary h-14 rounded-2xl text-background-dark font-bold hover:shadow-[0_0_30px_rgba(0,191,255,0.4)] transition-all active:scale-95 group"
+                                            >
+                                                <span className="material-symbols-outlined font-bold">check_circle</span>
+                                                <span>CONFIRM</span>
+                                            </button>
+                                            <button
+                                                onClick={() => processMessage('No')}
+                                                className="flex-1 min-w-[140px] flex items-center justify-center gap-2 bg-white/5 border border-white/10 h-14 rounded-2xl text-red-500 font-bold hover:bg-red-500/10 hover:border-red-500/30 transition-all"
+                                            >
+                                                <span className="material-symbols-outlined">close</span>
+                                                <span>CANCEL</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
                         </AnimatePresence>
-                        <div ref={chatEndRef} />
+
+                        <div ref={chatEndRef} className="h-4" />
                     </div>
 
-                    <form onSubmit={handleSend} className="mt-6 flex items-center gap-3">
-                        <div className="relative flex-1">
-                            <input
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                placeholder={isListening ? "Listening..." : isConfirming ? "Say Yes or No..." : "Ask me anything..."}
-                                className={`w-full bg-white/5 border ${isListening ? 'border-neon-cyan animate-pulse shadow-[0_0_15px_rgba(0,255,242,0.2)]' : 'border-white/10'} p-5 pr-16 rounded-full focus:outline-none focus:border-neon-cyan transition-all`}
-                            />
-                            <button
-                                type="submit"
-                                className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-neon-cyan text-black rounded-full hover:scale-105 transition-transform"
-                            >
-                                <Send className="w-5 h-5" />
-                            </button>
-                        </div>
+                    {/* Integrated Input Section at Bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 p-8 pt-20 bg-gradient-to-t from-background-dark via-background-dark to-transparent z-20 flex justify-center">
+                        <form onSubmit={handleSend} className="w-full max-w-2xl relative">
+                            <div className={`glass-panel rounded-full flex items-center p-2 pr-4 transition-all ${isListening ? 'border-primary shadow-[0_0_20px_rgba(0,191,255,0.2)]' : 'border-white/10 hover:border-white/20'}`}>
+                                <button
+                                    type="button"
+                                    onClick={startListening}
+                                    className={`p-3 rounded-full transition-all mr-2 ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
+                                >
+                                    {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                </button>
+                                <input
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    placeholder={isListening ? "Listening..." : "Type a command or reminder..."}
+                                    className="flex-1 bg-transparent border-none text-white placeholder:text-white/30 focus:ring-0 text-lg px-2"
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    className="p-3 bg-white/5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                                >
+                                    <Send className="w-5 h-5" />
+                                </button>
+                            </div>
+                            {/* Hints */}
+                            <div className="flex justify-center gap-4 mt-4 opacity-50">
+                                <span className="text-[10px] uppercase tracking-widest font-mono flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-xs">keyboard_return</span> ENTER TO SEND
+                                </span>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+            </main>
 
-                        <button
-                            type="button"
-                            onClick={startListening}
-                            className={`p-5 rounded-full transition-all ${isListening
-                                ? 'bg-red-500 text-white animate-bounce shadow-[0_0_25px_rgba(239,68,68,0.6)]'
-                                : isConfirming
-                                    ? 'bg-neon-cyan text-black shadow-[0_0_20px_rgba(0,255,242,0.5)]'
-                                    : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
-                                }`}
-                        >
-                            {isListening ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-                        </button>
-                    </form>
+            {/* Dynamic Status Bar */}
+            <footer className="h-10 border-t border-white/10 bg-background-dark/80 backdrop-blur-md px-6 flex items-center justify-between text-[10px] font-mono text-white/40 tracking-widest z-50">
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-primary/40"></span>
+                        <span>LATENCY: 14ms</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-primary/40"></span>
+                        <span>NEURAL LOAD: 24%</span>
+                    </div>
                 </div>
-            </div>
-
-            {/* Bottom: Reminder Board */}
-            <div className="h-[30%] bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] overflow-hidden">
-                <ReminderBoard />
-            </div>
-
-            {/* Toast Notifications */}
-            <AnimatePresence>
-                {notifications.length > 0 && notifications[0].id !== 'perm-denied' && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 100, scale: 0.8 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
-                        className="fixed bottom-32 right-12 z-[100] p-6 bg-white/5 backdrop-blur-3xl text-white rounded-[40px] shadow-[0_0_60px_rgba(0,0,0,0.5)] border-2 border-neon-cyan/20 flex flex-col gap-5 min-w-[350px] glow-cyan-subtle"
-                    >
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-neon-cyan/20 rounded-2xl flex items-center justify-center animate-bounce shadow-inner">
-                                <Bell className="text-neon-cyan w-6 h-6" />
-                            </div>
-                            <div>
-                                <h4 className="font-black text-xl uppercase tracking-tighter text-neon-cyan">Reminder Active</h4>
-                                <p className="text-white/90 font-medium text-sm pr-4">{notifications[0].message}</p>
-                            </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => {
-                                    // Extract ID if possible or use a specialized endpoint
-                                    // For now, we'll mark the latest active as done
-                                    const latest = reminders.filter(r => r.status === 'active').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                                    if (latest) assistantApi.completeReminder(latest.id).then(() => setNotifications([]));
-                                }}
-                                className="flex-1 py-3 bg-neon-cyan text-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.05] transition-transform"
-                            >
-                                Done
-                            </button>
-                            <button
-                                onClick={() => {
-                                    const latest = reminders.filter(r => r.status === 'active').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                                    if (latest) assistantApi.snoozeReminder(latest.id, 10).then(() => setNotifications([]));
-                                }}
-                                className="flex-1 py-3 bg-white/10 border border-white/10 rounded-2xl font-bold text-[10px] tracking-widest hover:bg-white/20 transition-all uppercase"
-                            >
-                                Snooze
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                <div className="flex items-center gap-4">
+                    <span>COORD: 34.0522° N, 118.2437° W</span>
+                    <span className="text-primary/60">03:42:12 UTC</span>
+                </div>
+            </footer>
         </div>
     );
 };
 
 export default Home;
+

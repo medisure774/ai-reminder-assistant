@@ -2,32 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-    background: #0a0a12;
+@layer base {
+    body {
+        @apply bg-background-light dark:bg-background-dark font-display overflow-x-hidden select-none;
+    }
 }
 
-body {
-    margin: 0;
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-/* Glassmorphism utility */
-.glass {
-    background: rgba(255, 255, 255, 0.05);
+.glass-panel {
+    background: rgba(15, 30, 35, 0.6);
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(0, 191, 255, 0.2);
 }
 
-/* Glow effects */
-.glow-cyan {
-    box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+.glow-pulse {
+    box-shadow: 0 0 40px rgba(0, 191, 255, 0.3);
 }
 
-.glow-purple {
-    box-shadow: 0 0 20px rgba(188, 19, 254, 0.3);
+.stardust-bg {
+    background: radial-gradient(circle at center, #1a3a45 0%, #0f1e23 70%, #050a0c 100%);
+}
+
+.token-ring {
+    border: 2px solid transparent;
+    border-top-color: #00bfff;
+    border-bottom-color: #00bfff;
 }
 
 /* Custom Scrollbar */
@@ -40,10 +38,39 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(0, 243, 255, 0.2);
+    background: rgba(0, 191, 255, 0.2);
     border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 243, 255, 0.4);
+    background: rgba(0, 191, 255, 0.4);
+}
+
+/* Animations */
+@keyframes spin-slow {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes spin-reverse-slow {
+    from {
+        transform: rotate(360deg);
+    }
+
+    to {
+        transform: rotate(0deg);
+    }
+}
+
+.animate-spin-slow {
+    animation: spin-slow 10s linear infinite;
+}
+
+.animate-spin-reverse-slow {
+    animation: spin-reverse-slow 15s linear infinite;
 }
