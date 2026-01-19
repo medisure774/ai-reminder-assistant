@@ -17,7 +17,7 @@ class ReminderParser:
     def parse(self, text: str, local_time_str: str = None):
         text = text.strip()
         # Sanitize common user error: 22:58 pm -> 22:58
-        text = re.sub(r'([1-2][0-9]):([0-5][0-9])\s*pm', r'\1:\2', text, flags=re.IGNORE_CASE)
+        text = re.sub(r'([1-2][0-9]):([0-5][0-9])\s*pm', r'\1:\2', text, flags=re.IGNORECASE)
         # Use current time as relative base for every parse
         current_settings = self.settings.copy()
         if local_time_str:
