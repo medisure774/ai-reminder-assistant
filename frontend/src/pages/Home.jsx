@@ -15,7 +15,7 @@ const Home = () => {
     const [isConfirming, setIsConfirming] = useState(false);
     const [pendingReminder, setPendingReminder] = useState(null);
     const [messages, setMessages] = useState([
-        { role: 'assistant', text: 'Welcome, Medisure Plus. How can I assist you today?' }
+        { role: 'assistant', text: 'Welcome. How can I assist you today?' }
     ]);
     const chatEndRef = useRef(null);
 
@@ -40,43 +40,60 @@ const Home = () => {
         try {
             if (isConfirming) {
                 const lower = text.toLowerCase();
-                const isPositive = lower.includes('yes') || lower.includes('ok') || lower.includes('yeah') || lower.includes('sure') || lower.includes('confirm');
+                const isPositive = lower.includes('yes') || lower.includes('ok') || lower.includes('sure') || lower.includes('confirm');
 
                 if (isPositive && pendingReminder) {
-                    const res = await assistantApi.chat(pendingReminder.originalCommand, false);
+                    // Use new createTask API directly
+                    const res = await assistantApi.createTask(pendingReminder);
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         text: res.data.message,
                         type: 'success'
                     }]);
                     if (isVoice) voiceOutput.speak(res.data.message);
-                } else {
-                    const msg = "Okay, I've canceled that reminder.";
+                } else if (lower.includes('cancel') || lower.includes('no')) {
+                    const msg = "Okay, canceled.";
                     setMessages(prev => [...prev, { role: 'assistant', text: msg }]);
                     if (isVoice) voiceOutput.speak(msg);
+                } else {
+                    // If user says something else, maybe re-parse? For now, just cancel or assume new command?
+                    // Let's assume new command if not confirming.
+                    setIsConfirming(false);
+                    setPendingReminder(null);
+                    // Recursive call? allow one level of recursion
+                    // processMessage(text, isVoice); 
+                    // Risk of loop. Just reset for now.
+                    const msg = "I didn't get a confirmation. I've reset. What can I do?";
+                    setMessages(prev => [...prev, { role: 'assistant', text: msg }]);
                 }
+
                 setIsConfirming(false);
                 setPendingReminder(null);
             } else {
                 const res = await assistantApi.chat(text, false);
 
-                if (res.data.type === 'preview') {
+                if (res.data.type === 'confirmation_card') {
                     setIsConfirming(true);
                     setPendingReminder({
-                        ...res.data.data,
-                        originalCommand: text
+                        // Adapt payload to TaskCreate model
+                        task: res.data.data.task,
+                        run_time: res.data.data.run_time,
+                        repeat_type: res.data.data.repeat_type,
+                        // We can add description/priority if we parse it later
                     });
 
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         text: res.data.message,
-                        type: 'preview',
+                        type: 'confirmation_card',
                         payload: res.data.data
                     }]);
 
+                    // Trigger Voice
                     if (isVoice) {
                         voiceOutput.speak(res.data.message, () => {
-                            startListening();
+                            // Optional: auto-listen for confirmation
+                            // startListening();
                         });
                     }
                 } else {
@@ -85,7 +102,8 @@ const Home = () => {
                 }
             }
         } catch (err) {
-            setMessages(prev => [...prev, { role: 'assistant', text: "Error connecting to system node." }]);
+            console.error(err);
+            setMessages(prev => [...prev, { role: 'assistant', text: "I'm having trouble reaching my brain components." }]);
         } finally {
             setIsThinking(false);
         }

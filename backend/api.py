@@ -1,13 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 import contextlib
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
-# Relative imports from the database package
+# Relative imports
 from database import db
 from parser import parser
 from scheduler import scheduler
@@ -15,151 +15,254 @@ from scheduler import scheduler
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
+# --- Pydantic Models ---
+
 class ChatRequest(BaseModel):
     message: str
     preview: Optional[bool] = False
-    local_time: Optional[str] = None
+    local_time: Optional[str] = None # ISO format preferably
+
+class TaskCreate(BaseModel):
+    task: str
+    run_time: str # ISO string
+    description: Optional[str] = None
+    repeat_type: Optional[str] = 'once'
+    priority: Optional[int] = 1
+
+class TaskUpdate(BaseModel):
+    task: Optional[str] = None
+    description: Optional[str] = None
+    run_time: Optional[str] = None
+    priority: Optional[int] = None
+    status: Optional[str] = None
 
 class ChatResponse(BaseModel):
-    type: str # 'reminder_created', 'text', 'error', 'preview'
+    type: str # 'reminder_created', 'text', 'error', 'preview', 'confirmation_card'
     message: str
     data: Optional[dict] = None
 
+# --- Lifecycle ---
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Start scheduler and load jobs
     logger.info("📦 Backend initializing...")
     scheduler.start()
     scheduler.load_jobs_from_db()
     logger.info("✅ Startup complete. System ready.")
     yield
-    # Shutdown logic if needed
     logger.info("🛑 Backend shutting down.")
 
 app = FastAPI(title="AI BUDDY API", lifespan=lifespan)
 
-# CORS: Production Ready
+# --- CORS ---
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For MVP, allow all; change to your Vercel URL in production
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --- Endpoints ---
+
 @app.get("/")
 def home():
-    return {"status": "online", "branding": "AI BUDDY", "message": "Backend is active."}
+    return {"status": "online", "branding": "AI BUDDY", "version": "2.0.0"}
 
 @app.get("/health")
 def health():
-    """Lightweight endpoint for uptime checks."""
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+# --- Chat & AI Logic ---
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     user_text = req.message.lower().strip()
     
-    # Check for silencers
-    if user_text in ['done', 'ok', 'stop', 'thanks', 'thank you', 'okay']:
+    # Simple silencers
+    if user_text in ['done', 'ok', 'stop', 'thanks', 'thank you', 'okay', 'cool']:
         db.mark_all_notifications_read()
         return ChatResponse(type="text", message="👍 Notifications silenced.")
 
     result = parser.parse(req.message, req.local_time)
+    
     if 'error' in result:
+        # Fallback: if no date found but text exists, maybe ask for time?
         return ChatResponse(type="error", message=result['error'])
     
-    # Calculate target time for server (Render is UTC)
-    # If we have local_time, result['run_time'] is relative to that.
-    target_time = result['run_time']
-    if req.local_time:
-        try:
-            # Parse user_now as ISO (it's formatted as sv/ISO on frontend now)
-            user_now = datetime.fromisoformat(req.local_time)
-            
-            # Both must be naive for delta
-            user_now_naive = user_now.replace(tzinfo=None)
-            target_time_naive = target_time.replace(tzinfo=None)
-            
-            delta = target_time_naive - user_now_naive
-            
-            # Application time on server
-            target_time = datetime.now() + delta
-            logger.info(f"Time Sync: UserNow={user_now_naive}, Target={target_time_naive}, Delta={delta}, ServerSchedule={target_time}")
-        except Exception as e:
-            logger.error(f"Time conversion error: {e}")
-            # Fallback to naive target_time
-            # If an error occurs, target_time remains result['run_time']
-    # If in preview mode, don't save to DB yet
-    if req.preview:
-        pretty_time = result['run_time'].strftime("%I:%M %p")
-        return ChatResponse(
-            type="preview",
-            message=f"Should I set a reminder for {result['task']} at {pretty_time}?",
-            data={
-                "task": result['task'],
-                "run_time": result['run_time'].isoformat(),
-                "repeat_type": result['repeat_type'],
-                "is_vague": result['is_vague'],
-                "matched_string": result['matched_string']
-            }
-        )
+    # If preview mode or just verifying format
+    # For voice flow: User speaks -> Text -> API Returns "Preview" -> User Confirms -> API Create
+    # But usually user expects immediate action if it was clear.
+    # The requirement says: "Never auto-save without confirmation"
     
+    pretty_time = result['run_time'].strftime("%I:%M %p, %b %d")
+    
+    # We return a confirmation card type so UI can show the nice card
+    return ChatResponse(
+        type="confirmation_card",
+        message=f"I'll remind you to {result['task']} at {pretty_time}. Confirm?",
+        data={
+            "task": result['task'],
+            "run_time": result['run_time'].isoformat(),
+            "repeat_type": result['repeat_type'],
+            "is_vague": result['is_vague'],
+            "original_text": req.message
+        }
+    )
+
+# --- Task Management ---
+
+@app.post("/tasks", response_model=ChatResponse)
+def create_task(task_data: TaskCreate):
+    """Direct task creation endpoint (used by UI confirmation or manual add)"""
     try:
-        r_id = db.add_reminder(result['task'], target_time, result['repeat_type'])
-        scheduler.schedule_reminder(r_id, result['task'], target_time, result['repeat_type'])
+        # Parse ISO string to datetime
+        try:
+            dt = datetime.fromisoformat(task_data.run_time.replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            # Fallback for simple formats if ISO fails
+            dt = datetime.strptime(task_data.run_time, "%Y-%m-%d %H:%M:%S")
+
+        r_id = db.add_reminder(
+            task=task_data.task,
+            run_time=dt,
+            repeat_type=task_data.repeat_type,
+            description=task_data.description,
+            priority=task_data.priority
+        )
+        scheduler.schedule_reminder(r_id, task_data.task, dt, task_data.repeat_type)
         
         return ChatResponse(
             type="reminder_created",
-            message=f"I've set a reminder for {result['task']}.",
-            data={
-                "id": r_id,
-                "task": result['task'],
-                "pretty_time": result['run_time'].strftime("%I:%M %p, %b %d")
-            }
+            message=f"Reminder set for {task_data.task}.",
+            data={"id": r_id}
         )
     except Exception as e:
-        logger.error(f"API Error: {e}")
-        return ChatResponse(type="error", message="Failed to process reminder.")
+        logger.error(f"Create Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/reminders")
-def list_reminders():
-    return db.get_active_reminders()
-
-@app.delete("/reminders/{r_id}")
-def delete_reminder(r_id: int):
-    db.delete_reminder(r_id)
-    scheduler.cancel_job(r_id)
-    return {"status": "deleted"}
-
-@app.get("/notifications")
-def get_notifs():
-    return db.get_unread_notifications()
-
-@app.post("/notifications/{n_id}/read")
-def read_notif(n_id: int):
-    db.mark_notification_read(n_id)
-    logger.info(f"Notification {n_id} marked as read.")
-    return {"status": "read"}
-
-@app.post("/reminders/{r_id}/complete")
-def complete_reminder(r_id: int):
-    # Get reminder info
-    reminders = db.get_active_reminders()
-    r = next((x for x in reminders if x['id'] == r_id), None)
+@app.get("/tasks/timeline")
+def get_timeline():
+    """Returns tasks grouped by Past, Today, Upcoming"""
+    all_reminders = db.get_active_reminders()
+    overdue = db.get_overdue_reminders()
     
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
+    past = []
+    today = []
+    upcoming = []
+    
+    # Process Overdue (from DB method which already filters run_time < now)
+    for r in overdue:
+         r['group'] = 'past'
+         past.append(r)
+
+    # Process Active/Snoozed
+    for r in all_reminders:
+        # DB active reminders are sorted by time.
+        # We need to filter out ones that are already in 'overdue' list if overlaps exist?
+        # Actually proper logic:
+        # Past = Status Active AND Time < Now (handled by get_overdue_reminders)
+        # Today = Time >= Now AND Time < Tomorrow
+        # Upcoming = Time >= Tomorrow
+        
+        rt_str = r['run_time']
+        if isinstance(rt_str, str):
+            rt = datetime.strptime(rt_str.split('.')[0], '%Y-%m-%d %H:%M:%S')
+        else:
+            rt = rt_str
+            
+        if rt < now:
+            # Should have been caught by overdue, but specific status check might differ
+            # If status is 'snoozed', it might be in future
+            continue
+            
+        if rt < today_end:
+            r['group'] = 'today'
+            today.append(r)
+        else:
+            r['group'] = 'upcoming'
+            upcoming.append(r)
+
+    return {
+        "past": past,
+        "today": today,
+        "upcoming": upcoming
+    }
+
+@app.get("/tasks/calendar")
+def get_calendar(month: int = Query(...), year: int = Query(...)):
+    """Returns tasks for a specific month"""
+    try:
+        start_date = date(year, month, 1)
+        if month == 12:
+            end_date = date(year + 1, 1, 1)
+        else:
+            end_date = date(year, month + 1, 1)
+            
+        # Convert to strings for DB query
+        start_str = start_date.strftime("%Y-%m-%d 00:00:00")
+        end_str = end_date.strftime("%Y-%m-%d 00:00:00")
+        
+        tasks = db.get_reminders_by_date_range(start_str, end_str)
+        return tasks
+    except Exception as e:
+        logger.error(f"Calendar Error: {e}")
+        return []
+
+@app.put("/tasks/{id}")
+def update_task(id: int, update: TaskUpdate):
+    data = {k: v for k, v in update.model_dump().items() if v is not None}
+    
+    # consistency check for run_time
+    if 'run_time' in data:
+         try:
+            dt = datetime.fromisoformat(data['run_time'].replace('Z', '+00:00')).replace(tzinfo=None)
+            data['run_time'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+         except:
+            pass
+            
+    success = db.update_reminder(id, data)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # If time changed, reschedule
+    if 'run_time' in data or 'task' in data or 'status' in data:
+         # simplified reschedule: reload job if active
+         reminders = db.get_active_reminders()
+         r = next((x for x in reminders if x['id'] == id), None)
+         if r:
+             dt = datetime.strptime(r['run_time'], '%Y-%m-%d %H:%M:%S')
+             scheduler.schedule_reminder(id, r['task'], dt, r['repeat_type'])
+         else:
+             scheduler.cancel_job(id)
+             
+    return {"status": "updated"}
+
+@app.post("/tasks/{id}/complete")
+def complete_task(id: int):
+    # Logic similar to old endpoint but cleaner
+    reminders = db.get_active_reminders()
+    r = next((x for x in reminders if x['id'] == id), None)
+    
+    if not r:
+        # Check if it was overdue
+        overdue = db.get_overdue_reminders()
+        r = next((x for x in overdue if x['id'] == id), None)
+
     if not r:
         return {"status": "error", "message": "Reminder not found"}
 
     if r['repeat_type'] == 'once':
-        db.complete_reminder(r_id)
-        scheduler.cancel_job(r_id)
+        db.complete_reminder(id)
+        scheduler.cancel_job(id)
         return {"status": "completed"}
     else:
-        # For recurring, we just acknowledge the completion for today 
-        # and keep the job running in APScheduler (which already uses Cron/Interval)
-        # We might want to update the 'run_time' in DB to show the NEXT occurrence
-        from datetime import datetime, timedelta
+        # Recurring logic
         rt = r['run_time']
         if isinstance(rt, str):
             rt = datetime.strptime(rt.split('.')[0], '%Y-%m-%d %H:%M:%S')
@@ -170,25 +273,46 @@ def complete_reminder(r_id: int):
         elif r['repeat_type'] == 'weekly':
             next_run = rt + timedelta(weeks=1)
             
-        # Update run_time in DB so UI shows the next one
-        db.update_reminder_time(r_id, next_run)
+        # If next run is still in past (e.g. missed multiple days), push to future?
+        # For simplicity, just add interval.
+        if next_run < datetime.now():
+            next_run = datetime.now() + timedelta(minutes=1) # basic fallback
+            
+        db.update_reminder_time(id, next_run)
+        scheduler.schedule_reminder(id, r['task'], next_run, r['repeat_type'])
         return {"status": "next_scheduled", "next_run": next_run.isoformat()}
 
-@app.post("/reminders/{r_id}/snooze")
-def snooze_reminder(r_id: int, minutes: int = 10):
-    # Calculate snooze time
-    from datetime import timedelta
+@app.post("/tasks/{id}/snooze")
+def snooze_task(id: int, minutes: int = 10):
     snooze_until = datetime.now() + timedelta(minutes=minutes)
+    db.snooze_reminder(id, snooze_until)
     
-    # Update DB
-    db.snooze_reminder(r_id, snooze_until)
-    
-    # Get current reminder info to re-schedule
-    reminders = db.get_active_reminders() # This might be inefficient, but works for MVP
-    r = next((x for x in reminders if x['id'] == r_id), None)
-    
+    # Reschedule
+    # Need to fetch task info, might not be in active if it was overdue
+    # Just force schedule a once-off job
+    # We can query specific reminder but DB class doesn't have get_one yet.
+    # Hack: use get_active or get_overdue
+    all_r = db.get_active_reminders() + db.get_overdue_reminders()
+    r = next((x for x in all_r if x['id'] == id), None)
     if r:
-        scheduler.schedule_reminder(r_id, r['task'], snooze_until, 'once') # Snooze is always a 'once' trigger
+        scheduler.schedule_reminder(id, r['task'], snooze_until, 'once')
         return {"status": "snoozed", "until": snooze_until.isoformat()}
-    
-    return {"status": "error", "message": "Reminder not found"}
+        
+    return {"status": "error", "message": "Task not found"}
+
+@app.delete("/tasks/{id}")
+def delete_task(id: int):
+    db.delete_reminder(id)
+    scheduler.cancel_job(id)
+    return {"status": "deleted"}
+
+# --- Notifications ---
+
+@app.get("/notifications")
+def get_notifs():
+    return db.get_unread_notifications()
+
+@app.post("/notifications/{id}/read")
+def read_notif(id: int):
+    db.mark_notification_read(id)
+    return {"status": "read"}
