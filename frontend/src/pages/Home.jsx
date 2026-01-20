@@ -54,7 +54,7 @@ const Home = () => {
                 } else if (lower.includes('cancel') || lower.includes('no')) {
                     const msg = "Okay, canceled.";
                     setMessages(prev => [...prev, { role: 'assistant', text: msg }]);
-                    if (isVoice) voiceOutput.speak(msg);
+                    voiceOutput.speak(msg);
                 } else {
                     // If user says something else, maybe re-parse? For now, just cancel or assume new command?
                     // Let's assume new command if not confirming.
@@ -286,7 +286,9 @@ const Home = () => {
                                                     <span className="material-symbols-outlined text-sm">schedule</span>
                                                     <span class="text-[10px] font-bold uppercase">Time</span>
                                                 </div>
-                                                <p className="text-white font-medium">{pendingReminder.time}</p>
+                                                <p className="text-white font-medium">
+                                                    {new Date(pendingReminder.run_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </p>
                                             </div>
                                             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                                                 <div className="flex items-center gap-2 text-primary/60 mb-1">
