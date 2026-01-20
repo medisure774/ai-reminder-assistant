@@ -119,7 +119,10 @@ def create_task(task_data: TaskCreate):
     try:
         # Parse ISO string to datetime
         try:
-            dt = datetime.fromisoformat(task_data.run_time.replace('Z', '+00:00')).replace(tzinfo=None)
+            # Incoming is UTC (from frontend new Date().toISOString())
+            # Convert to local time for the scheduler/DB which uses naive local time
+            utc_dt = datetime.fromisoformat(task_data.run_time.replace('Z', '+00:00'))
+            dt = utc_dt.astimezone().replace(tzinfo=None)
         except ValueError:
             # Fallback for simple formats if ISO fails
             dt = datetime.strptime(task_data.run_time, "%Y-%m-%d %H:%M:%S")
@@ -221,8 +224,9 @@ def update_task(id: int, update: TaskUpdate):
     # consistency check for run_time
     if 'run_time' in data:
          try:
-            dt = datetime.fromisoformat(data['run_time'].replace('Z', '+00:00')).replace(tzinfo=None)
-            data['run_time'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+            utc_dt = datetime.fromisoformat(data['run_time'].replace('Z', '+00:00'))
+            # Convert to local time
+            data['run_time'] = utc_dt.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
          except:
             pass
             

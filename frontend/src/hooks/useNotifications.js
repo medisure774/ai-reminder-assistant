@@ -73,7 +73,7 @@ const useNotifications = () => {
 
     useEffect(() => {
         syncSystem();
-        const interval = setInterval(syncSystem, 5000);
+        const interval = setInterval(syncSystem, 2000);
         return () => clearInterval(interval);
     }, []);
 
