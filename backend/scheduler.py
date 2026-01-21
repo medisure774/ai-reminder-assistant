@@ -7,12 +7,19 @@ from apscheduler.triggers.cron import CronTrigger
 import logging
 from datetime import datetime
 from database import db
+try:
+    import pytz
+    KOLKATA = pytz.timezone('Asia/Kolkata')
+except ImportError:
+    KOLKATA = None
 
 logger = logging.getLogger(__name__)
 
 class SchedulerManager:
     def __init__(self):
-        self.scheduler = BackgroundScheduler()
+        # Explicitly set timezone if available, otherwise default (local)
+        tz = KOLKATA if KOLKATA else None
+        self.scheduler = BackgroundScheduler(timezone=tz)
         self.is_running = False
         self.app_url = os.getenv("APP_URL")
 
@@ -20,7 +27,10 @@ class SchedulerManager:
         if not self.is_running:
             self.scheduler.start()
             self.is_running = True
-            logger.info("🚀 Scheduler started.")
+            if KOLKATA:
+                 logger.info(f"🚀 Scheduler started (Timezone: {KOLKATA}).")
+            else:
+                 logger.info("🚀 Scheduler started (System Timezone).")
             self.schedule_self_ping()
 
     def schedule_self_ping(self):
@@ -87,12 +97,22 @@ class SchedulerManager:
 
     def load_jobs_from_db(self):
         reminders = db.get_active_reminders()
-        now = datetime.now()
+        # Ensure 'now' is timezone aware for comparison if using aware datetimes
+        if KOLKATA:
+            now = datetime.now(KOLKATA)
+        else:
+            now = datetime.now()
+            
         for r in reminders:
             try:
                 rt = r['run_time']
                 if isinstance(rt, str):
                     rt = datetime.strptime(rt.split('.')[0], '%Y-%m-%d %H:%M:%S')
+
+                # If we are using timezone-aware scheduler, we must localize our naive DB dates
+                if KOLKATA and rt.tzinfo is None:
+                    rt = KOLKATA.localize(rt)
+
                 if r['repeat_type'] == 'once' and rt < now:
                     db.update_status(r['id'], 'done')
                     continue

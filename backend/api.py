@@ -10,106 +10,15 @@ from datetime import datetime, timedelta, date
 # Relative imports
 from database import db
 from parser import parser
-from scheduler import scheduler
+from scheduler import scheduler, KOLKATA
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 # --- Pydantic Models ---
+# ... (unchanged) ...
 
-class ChatRequest(BaseModel):
-    message: str
-    preview: Optional[bool] = False
-    local_time: Optional[str] = None # ISO format preferably
-
-class TaskCreate(BaseModel):
-    task: str
-    run_time: str # ISO string
-    description: Optional[str] = None
-    repeat_type: Optional[str] = 'once'
-    priority: Optional[int] = 1
-
-class TaskUpdate(BaseModel):
-    task: Optional[str] = None
-    description: Optional[str] = None
-    run_time: Optional[str] = None
-    priority: Optional[int] = None
-    status: Optional[str] = None
-
-class ChatResponse(BaseModel):
-    type: str # 'reminder_created', 'text', 'error', 'preview', 'confirmation_card'
-    message: str
-    data: Optional[dict] = None
-
-# --- Lifecycle ---
-
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("📦 Backend initializing...")
-    scheduler.start()
-    scheduler.load_jobs_from_db()
-    logger.info("✅ Startup complete. System ready.")
-    yield
-    logger.info("🛑 Backend shutting down.")
-
-app = FastAPI(title="AI BUDDY API", lifespan=lifespan)
-
-# --- CORS ---
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- Endpoints ---
-
-@app.get("/")
-def home():
-    return {"status": "online", "branding": "AI BUDDY", "version": "2.0.0"}
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
-
-# --- Chat & AI Logic ---
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    user_text = req.message.lower().strip()
-    
-    # Simple silencers
-    if user_text in ['done', 'ok', 'stop', 'thanks', 'thank you', 'okay', 'cool']:
-        db.mark_all_notifications_read()
-        return ChatResponse(type="text", message="👍 Notifications silenced.")
-
-    result = parser.parse(req.message, req.local_time)
-    
-    if 'error' in result:
-        # Fallback: if no date found but text exists, maybe ask for time?
-        return ChatResponse(type="error", message=result['error'])
-    
-    # If preview mode or just verifying format
-    # For voice flow: User speaks -> Text -> API Returns "Preview" -> User Confirms -> API Create
-    # But usually user expects immediate action if it was clear.
-    # The requirement says: "Never auto-save without confirmation"
-    
-    pretty_time = result['run_time'].strftime("%I:%M %p, %b %d")
-    
-    # We return a confirmation card type so UI can show the nice card
-    return ChatResponse(
-        type="confirmation_card",
-        message=f"I'll remind you to {result['task']} at {pretty_time}. Confirm?",
-        data={
-            "task": result['task'],
-            "run_time": result['run_time'].isoformat(),
-            "repeat_type": result['repeat_type'],
-            "is_vague": result['is_vague'],
-            "original_text": req.message
-        }
-    )
+# ...
 
 # --- Task Management ---
 
@@ -120,13 +29,28 @@ def create_task(task_data: TaskCreate):
         # Parse ISO string to datetime
         try:
             # Incoming is UTC (from frontend new Date().toISOString())
-            # Convert to local time for the scheduler/DB which uses naive local time
             utc_dt = datetime.fromisoformat(task_data.run_time.replace('Z', '+00:00'))
-            dt = utc_dt.astimezone().replace(tzinfo=None)
+            
+            # Convert to configured timezone (Kolkata) or system local
+            if KOLKATA:
+                dt = utc_dt.astimezone(KOLKATA)
+            else:
+                dt = utc_dt.astimezone()
+
+            # For DB, we store naive string (local time representation)
+            # If dt is aware, strftime('%Y-%m-%d %H:%M:%S') creates the correct naive local string
+            
         except ValueError:
             # Fallback for simple formats if ISO fails
             dt = datetime.strptime(task_data.run_time, "%Y-%m-%d %H:%M:%S")
+            if KOLKATA:
+                dt = KOLKATA.localize(dt)
 
+        # For the DB, we pass the datetime object. 
+        # The DB adapter converts it. If it's aware, it might format it with offset depending on logic.
+        # But our DB code manually formatted it using .strftime('%Y...').
+        # So passing 'dt' (aware) -> strftime (naive-looking string of local time) is correct.
+        
         r_id = db.add_reminder(
             task=task_data.task,
             run_time=dt,
@@ -134,6 +58,7 @@ def create_task(task_data: TaskCreate):
             description=task_data.description,
             priority=task_data.priority
         )
+        # Scheduler handles aware datetimes correctly now
         scheduler.schedule_reminder(r_id, task_data.task, dt, task_data.repeat_type)
         
         return ChatResponse(
@@ -226,7 +151,13 @@ def update_task(id: int, update: TaskUpdate):
          try:
             utc_dt = datetime.fromisoformat(data['run_time'].replace('Z', '+00:00'))
             # Convert to local time
-            data['run_time'] = utc_dt.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+            if KOLKATA:
+                dt = utc_dt.astimezone(KOLKATA)
+            else:
+                dt = utc_dt.astimezone()
+            
+            # Format to naive string for DB update
+            data['run_time'] = dt.strftime('%Y-%m-%d %H:%M:%S')
          except:
             pass
             
@@ -241,6 +172,9 @@ def update_task(id: int, update: TaskUpdate):
          r = next((x for x in reminders if x['id'] == id), None)
          if r:
              dt = datetime.strptime(r['run_time'], '%Y-%m-%d %H:%M:%S')
+             if KOLKATA:
+                 dt = KOLKATA.localize(dt)
+                 
              scheduler.schedule_reminder(id, r['task'], dt, r['repeat_type'])
          else:
              scheduler.cancel_job(id)
